@@ -10,9 +10,10 @@ function App() {
     'audio': true
   }
 
-  const handleMedia = async () => {
+  const handleGetMedia = async () => {
+    let stream = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
       videoRef.current.srcObject = stream;
       console.log('Got MediaStream:', stream);
     } catch (error) {
@@ -28,11 +29,11 @@ function App() {
         <div style={{
           width:'600px',
         }}>
-          <video ref={videoRef} autoPlay controls poster={logo} style={{
+          <video ref={videoRef} autoPlay controls={false} poster={logo} style={{
             width:'100%',
           }}></video>
         </div>
-        <button onClick={handleMedia} >Tıkla!</button>
+        <button onClick={handleGetMedia} >Tıkla!</button>
       </header>
     </div>
   );
