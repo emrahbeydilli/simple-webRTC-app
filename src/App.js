@@ -1,15 +1,10 @@
 import logo from './res.jpg'
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './App.css';
 
-import { registerPeerConnectionListeners } from './webrtc.utils';
-import { createRoom } from './utils/firebase.utils';
+import { createRoomRef} from './utils/firebase.utils';
+import chalk from 'chalk';
 
-
-const constraints = {
-  'video': true,
-  'audio': true
-}
 
 const configuration = {
   iceServers: [
@@ -24,39 +19,54 @@ const configuration = {
 };
 
 
-let localStream = null;
-// let remoteStream = null;
-
 function App() {
 
-  const videoRef = useRef();
+  const localVideoRef = useRef();
+  const remoteVideoRef = useRef();
+
+  const [localStream, setLocalStream] = useState(null);
 
   const [startBtn, setStartBtn] = useState(false);
-  const [stopBtn, setStopBtn] = useState(true);
+  const [callBtn, setCallBtn] = useState(true);
+  const [hangUpBtn, setHangUpBtn] = useState(true);
 
+  useEffect(() => {
+    localVideoRef.current.srcObject = localStream;
+    console.log('Got MediaStream:', localStream);
+  }, [localStream]);
 
   const handleStartStream = async () => {
+    setStartBtn(true);
+    setCallBtn(false);
     try {
-      localStream = await navigator.mediaDevices.getUserMedia(constraints);
-      videoRef.current.srcObject = localStream;
-      console.log('Got MediaStream:', localStream);
-
-      setStartBtn(true);
-      setStopBtn(false);
-
-      createRoom();
-
-    } catch (error) {
-      console.error('Error starting media devices.', error);
+      // Local Stream
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      setLocalStream(stream);
     }
-    // const displayMedia = await navigator.mediaDevices.getDisplayMedia();
-    // console.log("display media", displayMedia);
+
   }
 
-  const handleStopStream = async (event) =>{
+  const handleCallStream = async () => {
+    setCallBtn(true);
+    setHangUpBtn(false)
     try {
-      setStartBtn(false);
-      setStopBtn(true);
+      const videoTracks = localStream.getVideoTracks();
+      const audioTracks = localStream.getAudioTracks();
+      if (videoTracks.length > 0) {
+        console.log(`Using video device: ${videoTracks[0].label}`);
+      }
+      if (audioTracks.length > 0) {
+        console.log(`Using audio device: ${audioTracks[0].label}`);
+      }
+    } catch (error) {
+      console.error('Error stopping media devices.', error);
+    }
+  }
+
+  const handleHangUpStream = async () => {
+    try {
+      setCallBtn(false);
+      setHangUpBtn(true);
     } catch (error) {
       console.error('Error stopping media devices.', error);
     }
@@ -69,7 +79,18 @@ function App() {
           width: '600px',
         }}>
           <video
-            ref={videoRef}
+            ref={localVideoRef}
+            autoPlay
+            controls
+            controlsList='nodownload noremoteplayback'
+            poster={logo}
+            style={{
+              width: '100%',
+            }}
+            disablePictureInPicture
+          />
+          <video
+            ref={remoteVideoRef}
             autoPlay
             controls
             controlsList='nodownload noremoteplayback'
@@ -82,12 +103,14 @@ function App() {
 
         </div>
         <div style={{
-          display:'flex',
-          minWidth:'100px',
-          justifyContent:'space-between'
+          display: 'flex',
+          minWidth: '200px',
+          justifyContent: 'space-between'
         }}>
           <button onClick={handleStartStream} disabled={startBtn}>Start</button>
-          <button onClick={handleStopStream} disabled={stopBtn}>Stop</button>
+          <button onClick={handleCallStream} disabled={callBtn}>Call</button>
+          <button onClick={handleHangUpStream} disabled={hangUpBtn}>Hang Up</button>
+
         </div>
       </header>
     </div>
