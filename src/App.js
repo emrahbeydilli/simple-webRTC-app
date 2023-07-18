@@ -1,12 +1,8 @@
 import logo from './res.jpg'
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import './App.css';
 
-import { createRoomRef} from './utils/firebase.utils';
-import chalk from 'chalk';
-
-
-const configuration = {
+const servers = {
   iceServers: [
     {
       urls: [
@@ -14,62 +10,127 @@ const configuration = {
         'stun:stun2.l.google.com:19302',
       ],
     },
-  ],
-  iceCandidatePoolSize: 10,
+  ]
 };
 
+const offerOptions = {
+  offerToReceiveAudio: 1,
+  offerToReceiveVideo: 1
+};
+
+let localStream;
+let pc1Local;
+let pc1Remote
 
 function App() {
 
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
 
-  const [localStream, setLocalStream] = useState(null);
-
   const [startBtn, setStartBtn] = useState(false);
   const [callBtn, setCallBtn] = useState(true);
   const [hangUpBtn, setHangUpBtn] = useState(true);
 
-  useEffect(() => {
-    localVideoRef.current.srcObject = localStream;
-    console.log('Got MediaStream:', localStream);
-  }, [localStream]);
+  function gotRemoteStream1(e) {
+    if (remoteVideoRef.current.srcObject !== e.streams[0]) {
+      remoteVideoRef.current.srcObject = e.streams[0];
+      console.log('pc1: received remote stream');
+    }
+  }
 
+  function iceCallback1Local(event) {
+    handleCandidate(event.candidate, pc1Remote, 'pc1: ', 'local');
+  }
+
+  function iceCallback1Remote(event) {
+    handleCandidate(event.candidate, pc1Local, 'pc1: ', 'remote');
+  }
+
+  function handleCandidate(candidate, dest, prefix, type) {
+    dest.addIceCandidate(candidate)
+      .then(onAddIceCandidateSuccess, onAddIceCandidateError);
+    console.log(`${prefix}New ${type} ICE candidate: ${candidate ? candidate.candidate : '(null)'}`);
+  }
+
+  function onAddIceCandidateSuccess() {
+    console.log('AddIceCandidate success.');
+  }
+
+  function onAddIceCandidateError(error) {
+    console.log(`Failed to add ICE candidate: ${error.toString()}`);
+  }
+
+  function gotDescription1Local(desc) {
+    pc1Local.setLocalDescription(desc);
+    console.log(`Offer from pc1Local\n${desc.sdp}`);
+    pc1Remote.setRemoteDescription(desc);
+    // Since the 'remote' side has no media stream we need
+    // to pass in the right constraints in order for it to
+    // accept the incoming offer of audio and video.
+    pc1Remote.createAnswer().then(gotDescription1Remote, onCreateSessionDescriptionError);
+  }
+
+  function onCreateSessionDescriptionError(error) {
+    console.log(`Failed to create session description: ${error.toString()}`);
+  }
+
+  function gotDescription1Remote(desc) {
+    pc1Remote.setLocalDescription(desc);
+    console.log(`Answer from pc1Remote\n${desc.sdp}`);
+    pc1Local.setRemoteDescription(desc);
+  }
+
+  // Handle Start Button
   const handleStartStream = async () => {
+    console.log('Requesting local stream');
     setStartBtn(true);
     setCallBtn(false);
     try {
       // Local Stream
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      setLocalStream(stream);
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      localVideoRef.current.srcObject = localStream;
+      console.log('Got MediaStream:', localStream);
+    } catch (error) {
+      console.log("Error creating local stream", error);
     }
-
   }
 
+  // Handle Call Button
   const handleCallStream = async () => {
+    console.log('Starting calls');
     setCallBtn(true);
     setHangUpBtn(false)
-    try {
-      const videoTracks = localStream.getVideoTracks();
-      const audioTracks = localStream.getAudioTracks();
-      if (videoTracks.length > 0) {
-        console.log(`Using video device: ${videoTracks[0].label}`);
-      }
-      if (audioTracks.length > 0) {
-        console.log(`Using audio device: ${audioTracks[0].label}`);
-      }
-    } catch (error) {
-      console.error('Error stopping media devices.', error);
+    const audioTracks = localStream.getAudioTracks();
+    const videoTracks = localStream.getVideoTracks();
+    if (audioTracks.length > 0) {
+      console.log(`Using audio device: ${audioTracks[0].label}`);
     }
+    if (videoTracks.length > 0) {
+      console.log(`Using video device: ${videoTracks[0].label}`);
+    }
+    const servers = null;
+    pc1Local = new RTCPeerConnection(servers);
+    pc1Remote = new RTCPeerConnection(servers);
+
+    pc1Remote.ontrack = gotRemoteStream1;
+    pc1Local.onicecandidate = iceCallback1Local;
+    pc1Remote.onicecandidate = iceCallback1Remote;
+    console.log('pc1: created local and remote peer connection objects');
+    localStream.getTracks().forEach(track => pc1Local.addTrack(track, localStream));
+    console.log('Adding local stream to pc1Local');
+    pc1Local
+      .createOffer(offerOptions)
+      .then(gotDescription1Local, onCreateSessionDescriptionError);
   }
 
+  // Handle Hang Up Button
   const handleHangUpStream = async () => {
-    try {
-      setCallBtn(false);
-      setHangUpBtn(true);
-    } catch (error) {
-      console.error('Error stopping media devices.', error);
-    }
+    setCallBtn(false);
+    setHangUpBtn(true);
+    console.log('Ending calls');
+    pc1Local.close();
+    pc1Remote.close();
+    pc1Local = pc1Remote = null;
   }
 
   return (
